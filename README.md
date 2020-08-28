@@ -21,7 +21,7 @@ va.messagingUtil.setOnDataReceivedCallback(callback)
 
 ### postSelectionMessage
 
-Sends back to VA a message containing selections made in the third-party visualization. VA will use that information to either filter or select (brush) other report objects, depending on the Actions defined between the data-driven object and other VA report objects.
+Sends back to VA a message containing selections made in the third-party visualization. VA will use that information to either filter or select (brush) other report objects, depending on the Actions defined between the data-driven object and other VA report objects. It leverages function `postMessage` internally.
 
 _Usage:_
 ```javascript
@@ -32,7 +32,7 @@ va.messagingUtil.postSelectionMessage(resultName, selectedRows)
 
 ### postInstructionalMessage
 
-Sends back to VA an instructional message. This message is displayed in the data-driven content object in the VA report and is useful for sending text messages back to report authors informing required roles, their assignment order, types, etc.
+Sends back to VA an instructional message. This message is displayed in the data-driven content object in the VA report and is useful for sending text messages back to report authors informing required roles, their assignment order, types, etc. It leverages function `postMessage` internally.
 
 _Usage:_
 ```javascript
@@ -40,6 +40,42 @@ va.messagingUtil.postInstructionalMessage(resultName, strMessage)
 ```
 * `resultName`is the name of the associated query result, which is obtained from the message received from VA (event.data.resultName).
 * `strMessage` is the text message to be sent.
+
+### postMessage
+
+Sends back a message to VA.
+
+_Usage:_
+```javascript
+va.messagingUtil.postMessage(objMessage)
+```
+* `objMessage` is an object that contains either the selection or the instructional message to be sent to VA. Functions  `postSelectionMessage` and `postInstructionalMessage` are wrappers for this function. 
+Example of selection message:
+`{`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`resultName: "dd46",`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`selections: [0, 3, 4]`
+`}`
+Example of instructional message:
+`{`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`resultName: "dd34",`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`message: "Please, assign 
+proper roles"`
+`}`
+
+### getUrlParams
+
+Extracts parameter values assigned directly in the Data-Driven Content URL.
+
+_Usage:_
+```javascript
+value = va.messagingUtil.getUrlParams(name)
+```
+* `name` is the optional parameter name.
+* Possible return values:
+If `name` is an existing parameter, returns it's value
+If `name`is not an existing parameter, returns `null`
+If `name`is not informed, returns and object with all parameters name-value pairs: `{name1:value1, name2:value2, name3:value3, ...}`
+
 ---
 ## util/contentUtil.js
 
@@ -90,6 +126,18 @@ _Usage:_
 va.contentUtil.convertDateColumns(resultData)
 ```
 * `resultData` is the message received from VA (event.data).
+
+### getVAParameters
+
+Extracts parameter information from message received from VA. 
+
+_Usage:_
+```javascript
+parameters = va.messagingUtil.getVAParameters(resultData)
+```
+* `resultData` is the message received from VA (event.data).
+* Returns `parameters`, an object containing each parameter name and value (e.g. `{<param_label_1>:<param_value_1>, ... , <param_label_n>:<param_value_n>}`). If a certain `<param_label>` contains multiple values, its `<param_value>` is an array.
+
 ---
 ## thirdPartyHelpers/google.js
 
@@ -192,3 +240,201 @@ chartData = va.c3Helper.configureChartData(resultData, chartType, previousConfig
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`value: <array of all numeric columns labels>`   
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`}`   
 `}`
+
+---
+## util/casUtil.js
+
+It contains the functions you need to create CAS sessions and execute CAS actions from SAS Visual Analytics. Those functions were designed and tested with VA 8.3  (SAS Viya 3.4) and above, up to VA 8.5 (SAS Viya 3.5). Internal implementation and REST APIs used may differ depending the the SAS Viya version. Decisions are made based on the VA version detected. You must include the following line in the _\<head\>_ of the web page:
+```html
+<script type="text/javascript" src="../util/casUtil.js"></script>
+```
+### startCasSession
+
+Leverages SAS Viya REST API to create a CAS session that you can use to execute CAS actions. It uses the following endpoints internally: 
+VA 8.3 and above on SAS Viya 3.4:
+`/casManagement/servers` and `/casProxy/servers/<serverName>/cas/sessions`
+VA 8.5 on SAS Viya 3.5:
+`/casManagement/servers` and `/casManagement/servers/<serverName>/sessions`
+
+_Usage:_
+```javascript
+va.casUtil.startCasSession().then(function(sessionInfo){...})
+```
+* Alias: `startSession`
+* Uses `getCasServerName` and `getAppVersion` internally
+* Returns a promise for `sessionInfo`, an object containing CAS server name, CSRF token of the service used to create the session (casManagement or casProxy, depending on the VA version), session id, and session owner user id. For example:
+`{`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`casServerName: 'cas-shared-default',`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`csrfToken: 'f00cc954-040b-4407-b5ac-75a22df56ca3',`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`sessionId: '233c1c87-2016-1a41-8e99-461233aa306f',`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`userId: 'sasxyz'`
+`}` 
+
+_Note:_
+If you have more than one server, it returns the first one on the list.
+
+### casAction
+
+Leverages SAS Viya REST API to execute CAS actions by using the following endpoint: `/casProxy/servers/<serverName>/cas/sessions/<sessId>/actions/<action>`
+
+_Usage:_
+```javascript
+va.casUtil.casAction(serverName, sessId, action, data).then(function(response){...})
+```
+* `serverName` is the SAS Viya server name (e.g. 'cas-shared-default')
+* `sessId` is the CAS session ID (e.g. '233c1c87-2016-1a41-8e99-461233aa306f')
+* `action` is the CAS action (e.g. 'update', 'fetch', etc.)
+* `data` is the CAS action dependent payload as an object or in stringified JSON format. E.g. for a fetch action:
+`{`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`"table": {`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`"name": "CARS",`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`"caslib": "Public",`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`"where": "Origin='Asia'"`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`},` 
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`"fetchVars": [`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`{"name": "Invoice"}`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`]`
+`}`
+* Returns a promise for `response`, an object containing the data for the action called. See documentation for specific CAS action in [developers.sas.com](https://developer.sas.com/home.html).
+
+### getCasServerName
+
+Leverages SAS Viya REST API to obtain the CAS server name. It uses the following endpoint internally: 
+`/casManagement/servers`
+
+_Usage:_
+```javascript
+va.casUtil.getCasServerName().then(function(serverInfo){...})
+```
+* Returns a promise for `serverInfo`, an object containing CAS server name and CSRF token of the service used to create the session. For example:
+`{`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`casServerName: 'cas-shared-default',`
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`csrfToken: 'f00cc954-040b-4407-b5ac-75a22df56ca3'`
+`}` 
+
+_Note:_
+If you have more than one server, it returns the first one on the list.
+
+### getCsrfToken
+
+Leverages SAS Viya REST API to obtain the CSRF token for a specified service. It uses the following endpoint internally: 
+`/<service>/`
+
+_Usage:_
+```javascript
+va.casUtil.getCsrfToken(service).then(function(token){...})
+```
+* `service` is the name of the service you want to obtain the CSRF token for, e.g. 'casProxy'.
+* Returns a promise for `token`, a string containing the CSRF token of the service, e.g. `'f00cc954-040b-4407-b5ac-75a22df56ca3'`. 
+
+_Note:_
+Token values for each service are cached internally for future calls to this function.
+
+### getAppVersion
+
+Leverages SAS Viya REST API to obtain the version for a specified application. It uses the following endpoint internally: 
+`/<app>/apiMeta`
+
+_Usage:_
+```javascript
+va.casUtil.getAppVersion(app).then(function(version){...})
+```
+* `app` is the name of the application you want to obtain the version for, e.g. `'SASVisualAnalytics'`.
+* Returns a promise for `version`, a string containing the application version, e.g. `'8.5'`. 
+
+---
+## util/jobUtil.js
+
+It contains utility functions to support easier integration between SAS Visual Analytics and SAS Jobs. You must include the following line in the _\<head\>_ of the web page:
+```html
+<script type="text/javascript" src="../util/jobUtil.js"></script>
+```
+### PrepareVADataForSASJobs
+
+Transforms the data received from VA and adds extra format information for SAS Jobs to use. 
+
+_Usage:_
+```javascript
+va.jobUtil.PrepareVADataForSASJobs(resultData)
+```
+* `resultData` is the message received from VA (event.data) that will be transformed.
+
+_Notes:_
+* Modifications performed on `resultData.data` depend on the data type:
+	* String:
+		* missing values come as "(missing)" and are modified to "".
+	* Date:
+		* values come as formatted strings according to their date formats. They are transformed to their corresponding SAS date numbers expressed as number of days since January 1st, 1960.
+		* The following date formats are not supported (generate missing values): 
+			* Day of Year (JULDAY1). E.g.: 176
+			* Week (WEEKV2). E.g.: 26
+			* Week (WEEKV3). E.g.: W26
+			* Year, Week (WEEKV5). E.g.: 15W26
+			* Year, Week, Day (WEEKV7). E.g.: 15W2604
+			* Year, Week, Day (WEEKV9). E.g.: 2015W2604
+			* Year, Week, Day (WEEKV0). E.g.: 2015-W26-04
+		* Some date string representations cannot accurately be mapped to one specific date. The formats below are treated by making up day, month, and year values as needed:
+			* Day of Month (DAY9). E.g.: 25
+			* Day of Week (DOWNAME11). E.g.: Thursday
+			* Day of Week (DOWNAME1). E.g.: Thu
+			* Day, Date (WEEKDATE9). E.g.: Thursday
+			* Day, Date (WEEKDATE3). E.g.: Thu
+			* MMMYYYY (MONYY7). E.g.: Jun2015
+			* MMYYYY (MMYY8). E.g.: 06/2015
+			* Month (MONTH7). E.g.: June
+			* Month (MONTH3). E.g.: Jun
+			* Month (MONTH2). E.g.: 6
+			* Month, Day, Year (WORDDATE9). E.g.: June
+			* Month, Day, Year (WORDDATE3). E.g.: Jun
+			* Quarter (QTR4). E.g.: Q2
+			* Quarter (QTR6). E.g.: 2nd quarter
+			* Quarter, Year (YYQC5). E.g.: 2nd quarter 2015
+			* Year (YEAR4). E.g.: 2015
+			* YYYYMM (YYMM8). E.g.: 2015/06
+	* Datetime:
+		* values come as formatted strings according to their datetime formats. They are transformed to their corresponding SAS datetime numbers expressed as number of seconds since January 1st, 1960.
+		* Some datetime string representations cannot accurately be mapped to one specific datetime. The formats below are treated by making up day, month, and year values as needed:
+			* Day, Date (DTWKDATX3). E.g.: Thu
+			* Day, Date (DTWKDATX9). E.g.: Thursday
+			* Quarter, Year (DTYYQC5). E.g.: 2nd quarter 2015
+			* Time (TIMEAMPM5). E.g.: 03:42 PM
+			* Time (TIMEAMPM8). E.g.: 03:42:12 PM
+			* Time (TIMEAMPM2). E.g.: 15
+			* Year (DTYEAR10). E.g.: 2015
+
+* Formats in VA for number/date/datetime are slightly different compared to SAS Jobs. Job-specific format information is added under `resultData.columns` and depends on the data type and VA format:
+`{`   
+&nbsp;&nbsp;`... ,`   
+&nbsp;&nbsp;`columns: [`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`{`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`... ,`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`name4job: <format_name>,`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`type4job: <format_type>,`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`width4job: <format_width>,`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`precision4job: <format_precision>`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`},`   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`...`   
+&nbsp;&nbsp;`],`   
+&nbsp;&nbsp;`... `   
+`}`
+
+### pingApp
+
+Pings the app to keep it alive. 
+
+_Usage:_
+```javascript
+va.jobUtil.pingApp(app)
+```
+* `app` is the name of the application, e.g. `'SASJobExecution'`.
+* Returns a promise.
+
+### keepAppAlive
+
+Calls pingApp on 1 minute intervals to keep the application alive.
+
+_Usage:_
+```javascript
+va.jobUtil.keepAppAlive(app)
+```
+* `app` is the name of the application, e.g. `'SASJobExecution'`.
